@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  # ─── Frontend: Nginx serving HTML/Tailwind pages ───
+  app:
+    build: ./app
+    container_name: docupload-app
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    networks:
+      - docnet
+
+  # ─── Backend API: Node.js/Express handling uploads & routing ───
+  api:
+    build: ./api
+    container_name: docupload-api
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/app/uploads
+    environment:
+      - OCR_SERVICE_URL=http://ocr:5000
+      - UPLOAD_DIR=/app/uploads
+    depends_on:
+      - ocr
+    networks:
+      - docnet
+
+  # ─── OCR Service: Tesseract-based text extraction ───
+  ocr:
+    build: ./ocr-service
+    container_name: docupload-ocr
+    ports:
+      - "5000:5000"
+    networks:
+      - docnet
+
+volumes:
+  uploads:
+    driver: local
+
+networks:
+  docnet:
+    driver: bridge
