@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocScan — File Browser</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            ink: '#1a1a2e',
+            paper: '#faf9f6',
+            accent: '#e85d04',
+            muted: '#6b7280',
+            surface: '#f0ede8',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'DM Sans', sans-serif; background: #faf9f6; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    .fade-in { animation: fadeIn .35s ease-out forwards; opacity: 0; }
+    .text-modal-bg { background: rgba(26,26,46,.5); }
+  </style>
+</head>
+<body class="min-h-screen bg-paper text-ink">
+
+  <!-- Nav -->
+  <nav class="border-b border-gray-200 bg-white/60 backdrop-blur-sm sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2 text-lg font-bold tracking-tight">
+        <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 3v5a2 2 0 002 2h4"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6M9 17h4"/>
+        </svg>
+        DocScan
+      </a>
+      <a href="/" class="text-sm font-medium text-muted hover:text-ink transition-colors px-3 py-1.5 rounded-md hover:bg-surface">
+        ← Upload New
+      </a>
+    </div>
+  </nav>
+
+  <main class="max-w-5xl mx-auto px-6 py-12">
+
+    <!-- Header -->
+    <div class="flex items-end justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight">Uploaded Files</h1>
+        <p class="text-muted mt-1" id="fileCount">Loading…</p>
+      </div>
+      <button onclick="loadFiles()" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-muted hover:text-ink rounded-lg hover:bg-surface transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+        Refresh
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div id="loadingState" class="text-center py-20">
+      <svg class="w-8 h-8 text-accent animate-spin mx-auto mb-3" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+      </svg>
+      <p class="text-muted">Loading files…</p>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="hidden text-center py-20">
+      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-surface flex items-center justify-center">
+        <svg class="w-8 h-8 text-muted" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
+        </svg>
+      </div>
+      <p class="text-lg font-medium mb-1">No files yet</p>
+      <p class="text-muted mb-5">Upload your first document to get started.</p>
+      <a href="/" class="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-white rounded-lg font-medium hover:bg-orange-600 transition-colors">
+        Upload a Document
+      </a>
+    </div>
+
+    <!-- File Grid -->
+    <div id="fileGrid" class="hidden grid gap-4"></div>
+  </main>
+
+  <!-- Text Preview Modal -->
+  <div id="textModal" class="hidden fixed inset-0 z-50 text-modal-bg flex items-center justify-center p-6" onclick="closeModal(event)">
+    <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between p-5 border-b border-gray-100">
+        <h3 class="font-semibold" id="modalTitle">Extracted Text</h3>
+        <button onclick="document.getElementById('textModal').classList.add('hidden')"
+                class="p-1.5 rounded-lg hover:bg-surface transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5 overflow-y-auto flex-1">
+        <pre id="modalText" class="font-mono text-sm leading-relaxed text-gray-700 whitespace-pre-wrap"></pre>
+      </div>
+      <div class="p-4 border-t border-gray-100 flex justify-end gap-3">
+        <button onclick="copyModalText()" class="px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 hover:bg-surface transition-colors">
+          Copy Text
+        </button>
+        <a id="modalDownload" href="#" download class="px-4 py-2 text-sm font-medium rounded-lg bg-ink text-white hover:bg-gray-800 transition-colors">
+          Download .txt
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allFiles = [];
+
+    // ─── Load files on page load ───
+    document.addEventListener('DOMContentLoaded', loadFiles);
+
+    async function loadFiles() {
+      const loading = document.getElementById('loadingState');
+      const empty = document.getElementById('emptyState');
+      const grid = document.getElementById('fileGrid');
+      const count = document.getElementById('fileCount');
+
+      loading.classList.remove('hidden');
+      empty.classList.add('hidden');
+      grid.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/files');
+        const data = await res.json();
+        allFiles = data.files || [];
+
+        loading.classList.add('hidden');
+
+        if (allFiles.length === 0) {
+          empty.classList.remove('hidden');
+          count.textContent = 'No files uploaded';
+          return;
+        }
+
+        count.textContent = `${allFiles.length} file${allFiles.length !== 1 ? 's' : ''} uploaded`;
+        renderFiles(allFiles);
+        grid.classList.remove('hidden');
+      } catch (err) {
+        loading.classList.add('hidden');
+        count.textContent = 'Error loading files';
+        grid.innerHTML = `
+          <div class="col-span-full bg-red-50 border border-red-200 rounded-xl p-5 text-center">
+            <p class="text-red-700 font-medium">Failed to load files</p>
+            <p class="text-red-600 text-sm mt-1">${escapeHtml(err.message)}</p>
+          </div>`;
+        grid.classList.remove('hidden');
+      }
+    }
+
+    function renderFiles(files) {
+      const grid = document.getElementById('fileGrid');
+      grid.innerHTML = files.map((file, i) => {
+        const cat = getFileCategory(file.mimeType, file.filename);
+        const date = new Date(file.uploadedAt);
+        const timeStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      + ' at ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+        return `
+          <div class="fade-in bg-white rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all p-5 flex items-center gap-4"
+               style="animation-delay: ${i * 60}ms">
+            <!-- Icon -->
+            <div class="text-2xl flex-shrink-0 w-10 h-10 rounded-lg bg-${cat.color}-50 flex items-center justify-center">
+              ${cat.icon}
+            </div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <p class="font-medium truncate leading-tight">${escapeHtml(file.filename)}</p>
+              <div class="flex items-center gap-3 mt-1 flex-wrap">
+                <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-${cat.color}-100 text-${cat.color}-700">${cat.label}</span>
+                <span class="text-xs text-muted">${formatSize(file.size)}</span>
+                <span class="text-xs text-muted">${timeStr}</span>
+                ${file.hasExtractedText ? '<span class="text-xs font-medium text-green-600">✓ OCR</span>' : ''}
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center gap-2 flex-shrink-0">
+              ${file.hasExtractedText ? `
+                <button onclick="viewText('${escapeAttr(file.textFile)}', '${escapeAttr(file.filename)}')"
+                        class="p-2 rounded-lg hover:bg-surface transition-colors text-muted hover:text-accent" title="View extracted text">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  </svg>
+                </button>
+                <a href="/api/files/text/${encodeURIComponent(file.textFile)}" download
+                   class="p-2 rounded-lg hover:bg-surface transition-colors text-muted hover:text-green-600" title="Download extracted text">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+                  </svg>
+                </a>
+              ` : ''}
+              <a href="/api/files/download/${encodeURIComponent(file.filename)}" download
+                 class="p-2 rounded-lg hover:bg-surface transition-colors text-muted hover:text-ink" title="Download original">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+              </a>
+              <button onclick="deleteFile('${escapeAttr(file.filename)}')"
+                      class="p-2 rounded-lg hover:bg-red-50 transition-colors text-muted hover:text-red-500" title="Delete">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+                </svg>
+              </button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // ─── View extracted text ───
+    async function viewText(textFile, originalName) {
+      const modal = document.getElementById('textModal');
+      const modalText = document.getElementById('modalText');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalDownload = document.getElementById('modalDownload');
+
+      modalTitle.textContent = `Extracted from: ${originalName}`;
+      modalText.textContent = 'Loading…';
+      modalDownload.href = `/api/files/text/${encodeURIComponent(textFile)}`;
+      modal.classList.remove('hidden');
+
+      try {
+        const res = await fetch(`/api/files/text-preview/${encodeURIComponent(textFile)}`);
+        const data = await res.json();
+        modalText.textContent = data.text || '(No text found)';
+      } catch {
+        modalText.textContent = 'Failed to load text preview.';
+      }
+    }
+
+    function closeModal(e) {
+      if (e.target === e.currentTarget) {
+        document.getElementById('textModal').classList.add('hidden');
+      }
+    }
+
+    function copyModalText() {
+      const text = document.getElementById('modalText').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        // Brief visual feedback
+        const btn = event.target.closest('button');
+        const original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = original, 1500);
+      });
+    }
+
+    // ─── Delete file ───
+    async function deleteFile(filename) {
+      if (!confirm(`Delete "${filename}"? This cannot be undone.`)) return;
+      try {
+        await fetch(`/api/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        loadFiles();
+      } catch (err) {
+        alert('Delete failed: ' + err.message);
+      }
+    }
+
+    // ─── Helpers ───
+    function getFileCategory(mimeType, filename) {
+      if (!mimeType) return { label: 'Unknown', color: 'gray', icon: '📄' };
+      if (mimeType.startsWith('image/')) return { label: 'Image', color: 'green', icon: '🖼️' };
+      if (mimeType === 'application/pdf') return { label: 'PDF', color: 'red', icon: '📕' };
+      if (mimeType.includes('word') || (filename && filename.match(/\.docx?$/i))) return { label: 'Word', color: 'blue', icon: '📝' };
+      if (mimeType.includes('sheet') || mimeType.includes('excel') || (filename && filename.match(/\.xlsx?$/i))) return { label: 'Sheet', color: 'emerald', icon: '📊' };
+      if (mimeType.includes('text')) return { label: 'Text', color: 'yellow', icon: '📃' };
+      return { label: 'File', color: 'purple', icon: '📄' };
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+    function escapeAttr(t) { return t.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+  </script>
+</body>
+</html>

@@ -1,0 +1,383 @@
+openapi: "3.0.3"
+info:
+  title: DocScan REST API
+  description: |
+    Language-agnostic REST API for document upload, OCR text extraction, and file management.
+    
+    ## Authentication
+    All endpoints (except `/v1/health` and `/v1/docs`) require an API key passed via the `X-API-Key` header.
+    
+    ## Rate Limiting
+    Default: 100 requests per 60-second window per API key.
+    Rate limit headers are returned: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+    
+    ## OCR Support
+    Images (PNG, JPEG, TIFF, BMP, GIF, WebP) and PDFs are automatically processed with Tesseract OCR.
+    Extracted text is stored alongside the original file and accessible via dedicated endpoints.
+    
+    ## Error Format
+    All errors return a consistent JSON envelope:
+    ```json
+    {
+      "error": {
+        "code": "ERROR_CODE",
+        "message": "Human-readable description",
+        "requestId": "uuid"
+      }
+    }
+    ```
+  version: "1.0.0"
+  contact:
+    name: DocScan API Support
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:4000
+    description: Local development (Docker Compose)
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication. Default dev key is `docupload-dev-key-change-me`.
+
+  schemas:
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique document identifier (timestamped filename)
+          example: "1706900000000-receipt.jpg"
+        originalName:
+          type: string
+          description: Original filename as uploaded
+          example: "receipt.jpg"
+        mimeType:
+          type: string
+          description: Detected MIME type
+          example: "image/jpeg"
+        sizeBytes:
+          type: integer
+          description: File size in bytes
+          example: 245760
+        classification:
+          type: object
+          properties:
+            isImage:
+              type: boolean
+            isPdf:
+              type: boolean
+            category:
+              type: string
+              enum: [image, pdf, document]
+        ocr:
+          type: object
+          properties:
+            applied:
+              type: boolean
+              description: Whether OCR was performed
+            extractedText:
+              type: string
+              nullable: true
+              description: Full extracted text (null if OCR not applied)
+            textFileId:
+              type: string
+              nullable: true
+              description: Text file identifier for download
+            characterCount:
+              type: integer
+              description: Number of characters extracted
+            error:
+              type: string
+              nullable: true
+              description: OCR error message if processing failed
+        links:
+          type: object
+          properties:
+            downloadOriginal:
+              type: string
+              description: URL path to download original file
+            downloadText:
+              type: string
+              nullable: true
+              description: URL path to download extracted text
+            delete:
+              type: string
+              description: URL path to delete this document
+
+    DocumentListItem:
+      type: object
+      properties:
+        id:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        isImage:
+          type: boolean
+        uploadedAt:
+          type: string
+          format: date-time
+        ocr:
+          type: object
+          properties:
+            hasExtractedText:
+              type: boolean
+            textFileId:
+              type: string
+              nullable: true
+        links:
+          type: object
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "MISSING_API_KEY"
+            message:
+              type: string
+              example: "X-API-Key header is required."
+            requestId:
+              type: string
+              format: uuid
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        gateway:
+          type: object
+          properties:
+            version:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+        backend:
+          type: object
+        requestId:
+          type: string
+
+paths:
+  /v1/health:
+    get:
+      summary: Health check
+      description: Returns the health status of the gateway and backend services. No authentication required.
+      tags: [System]
+      security: []
+      responses:
+        "200":
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /v1/documents:
+    post:
+      summary: Upload a document
+      description: |
+        Upload a file via multipart/form-data. The system will:
+        1. Store the original file
+        2. Detect the MIME type
+        3. If image or PDF, run Tesseract OCR to extract text
+        4. Store extracted text alongside the original
+        
+        **Supported OCR formats:** PNG, JPEG, TIFF, BMP, GIF, WebP, PDF
+        
+        **Max file size:** 50 MB
+      tags: [Documents]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document]
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: The file to upload
+      responses:
+        "201":
+          description: Document uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: "#/components/schemas/Document"
+                  requestId:
+                    type: string
+              example:
+                document:
+                  id: "1706900000000-receipt.jpg"
+                  originalName: "receipt.jpg"
+                  mimeType: "image/jpeg"
+                  sizeBytes: 245760
+                  classification:
+                    isImage: true
+                    isPdf: false
+                    category: "image"
+                  ocr:
+                    applied: true
+                    extractedText: "GROCERY STORE\nMilk $3.99\nBread $2.49"
+                    textFileId: "1706900000000-receipt.txt"
+                    characterCount: 42
+                    error: null
+                  links:
+                    downloadOriginal: "/v1/documents/1706900000000-receipt.jpg/download"
+                    downloadText: "/v1/documents/1706900000000-receipt.jpg/text"
+                    delete: "/v1/documents/1706900000000-receipt.jpg"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        "400":
+          description: No file provided
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing API key
+        "413":
+          description: File too large (>50 MB)
+        "429":
+          description: Rate limit exceeded
+
+    get:
+      summary: List all documents
+      description: Returns all uploaded documents sorted by upload date (newest first), with metadata and links.
+      tags: [Documents]
+      responses:
+        "200":
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DocumentListItem"
+                  count:
+                    type: integer
+                  requestId:
+                    type: string
+
+  /v1/documents/{id}/download:
+    get:
+      summary: Download original file
+      description: Returns the original uploaded file as a binary stream.
+      tags: [Documents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Document ID (filename)
+      responses:
+        "200":
+          description: File binary stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Document not found
+
+  /v1/documents/{id}/text:
+    get:
+      summary: Download extracted text
+      description: Returns the OCR-extracted text as a `.txt` file download.
+      tags: [Documents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Text file download
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          description: No extracted text available
+
+  /v1/documents/{id}/text/preview:
+    get:
+      summary: Preview extracted text (JSON)
+      description: Returns the OCR-extracted text as a JSON object for programmatic access.
+      tags: [Documents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Extracted text
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documentId:
+                    type: string
+                  text:
+                    type: string
+                  characterCount:
+                    type: integer
+                  requestId:
+                    type: string
+        "404":
+          description: No extracted text available
+
+  /v1/documents/{id}:
+    delete:
+      summary: Delete a document
+      description: Permanently deletes the original file and its extracted text.
+      tags: [Documents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Document deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                  documentId:
+                    type: string
+                  requestId:
+                    type: string
+        "404":
+          description: Document not found

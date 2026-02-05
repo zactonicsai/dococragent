@@ -1,0 +1,76 @@
+version: "3.8"
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # SERVICE 1: Frontend — Nginx serving HTML/Tailwind pages
+  # ═══════════════════════════════════════════════════════════════
+  app:
+    build: ./app
+    container_name: docupload-app
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    networks:
+      - docnet
+
+  # ═══════════════════════════════════════════════════════════════
+  # SERVICE 2: Internal API — Node.js/Express (upload logic + OCR)
+  # Not exposed externally in production; accessed via gateway
+  # ═══════════════════════════════════════════════════════════════
+  api:
+    build: ./api
+    container_name: docupload-api
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/app/uploads
+    environment:
+      - OCR_SERVICE_URL=http://ocr:5000
+      - UPLOAD_DIR=/app/uploads
+    depends_on:
+      - ocr
+    networks:
+      - docnet
+
+  # ═══════════════════════════════════════════════════════════════
+  # SERVICE 3: REST API Gateway — Language-agnostic REST endpoint
+  # Any client (Java, Go, Python, curl, etc.) connects HERE
+  # Features: API key auth, rate limiting, request logging,
+  #           versioned routes (/v1/*), OpenAPI spec serving
+  # ═══════════════════════════════════════════════════════════════
+  gateway:
+    build: ./gateway
+    container_name: docupload-gateway
+    ports:
+      - "4000:4000"
+    environment:
+      - API_BACKEND_URL=http://api:3000
+      - GATEWAY_PORT=4000
+      - API_KEY=docupload-dev-key-change-me
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX=100
+      - LOG_LEVEL=info
+    depends_on:
+      - api
+    networks:
+      - docnet
+
+  # ═══════════════════════════════════════════════════════════════
+  # SERVICE 4: OCR Service — Tesseract-based text extraction
+  # ═══════════════════════════════════════════════════════════════
+  ocr:
+    build: ./ocr-service
+    container_name: docupload-ocr
+    ports:
+      - "5000:5000"
+    networks:
+      - docnet
+
+volumes:
+  uploads:
+    driver: local
+
+networks:
+  docnet:
+    driver: bridge
